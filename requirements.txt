@@ -1,0 +1,15 @@
+# requirements.txt — Pediatric_Spindles_HI
+#
+# Python analysis pipeline. Install into a fresh environment with either:
+#
+#     uv sync                       # uses pyproject.toml + uv.lock (pinned)
+#     pip install -r requirements.txt
+#
+# Tested on Python 3.10+.
+
+numpy          # array math, channel-wise regression matrices
+pandas         # covariate / spindle tables, CSV I/O
+scipy          # z-scores, spatial distance, signal filtering (Hilbert envelope)
+statsmodels    # OLS channel and behavioral regression models
+matplotlib     # manuscript figure rendering
+mne            # EEG montage, Delaunay channel adjacency, topomaps

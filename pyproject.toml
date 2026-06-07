@@ -1,0 +1,13 @@
+[project]
+name = "pediatric-spindles-hi"
+version = "0.1.0"
+description = "Analysis pipeline for pediatric sleep spindle topography and its association with hypopnea burden and attention"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "statsmodels",
+    "matplotlib",
+    "mne",
+]

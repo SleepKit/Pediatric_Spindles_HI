@@ -1,0 +1,43 @@
+{
+  "authors": [
+    {
+      "full_name": "Ido Haber",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"},
+        {"department": "Department of Biomedical Engineering", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Tamara P. Taporoski",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Camilla Matthews",
+      "affiliations": [
+        {"department": "Department of Pediatrics", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Emma Strainis",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Ana Maria Vascan",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Stephanie G. Jones",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ],
+      "corresponding": true,
+      "email": "sgjones2@wisc.edu"
+    }
+  ]
+}

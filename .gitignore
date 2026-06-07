@@ -1,0 +1,15 @@
+# Pediatric clinical source data — never tracked (HIPAA / privacy)
+datasets/
+
+# Pipeline regeneration targets (curated copies live in assets/)
+output/
+
+# Runtime caches
+temp/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Build / venv
+.venv/
+*.egg-info/
