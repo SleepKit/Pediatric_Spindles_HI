@@ -630,7 +630,7 @@ def _topo_scatter_row(fig, gs, r, row_label, corr_tag, ddict, metric,
     _scatter_roi_vs_hi(ax_s, scatter_mat, scatter_roi, covUse, scatter_ylabel)
     if r == 0:
         ax_s.set_title('Partial residuals', fontsize=FONT_TITLE, fontweight='bold', pad=6)
-    ax_s.text(-0.18, 1.08, panel_labels[pi], transform=ax_s.transAxes,
+    ax_s.text(-0.30, 1.08, panel_labels[pi], transform=ax_s.transAxes,
               fontsize=FONT_PANEL, fontweight='bold', va='top')
     pi += 1
     return pi
