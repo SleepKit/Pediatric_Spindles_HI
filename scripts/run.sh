@@ -11,24 +11,27 @@
 #   ./scripts/run.sh cluster     # cluster_permutation.py     -> corrected p-values
 #   ./scripts/run.sh behavior    # behavioral_models.py       -> ROI/TOVA models
 #   ./scripts/run.sh figures     # generate_manuscript_figures.py
-#   ./scripts/run.sh all         # rois -> cluster -> behavior -> figures
+#   ./scripts/run.sh supplement  # build_supplement.py        -> SI document
+#   ./scripts/run.sh all         # rois -> cluster -> behavior -> figures -> supplement
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO/src"
 PY="${PYTHON:-python3}"
 
-run_rois()     { "$PY" compute_rois_corrected.py; }
-run_cluster()  { "$PY" cluster_permutation.py; }
-run_behavior() { "$PY" behavioral_models.py; }
-run_figures()  { "$PY" generate_manuscript_figures.py; }
+run_rois()       { "$PY" compute_rois_corrected.py; }
+run_cluster()    { "$PY" cluster_permutation.py; }
+run_behavior()   { "$PY" behavioral_models.py; }
+run_figures()    { "$PY" generate_manuscript_figures.py; }
+run_supplement() { "$PY" build_supplement.py; }
 
 case "${1:-help}" in
-  rois)     run_rois ;;
-  cluster)  run_cluster ;;
-  behavior) run_behavior ;;
-  figures)  run_figures ;;
-  all)      run_rois; run_cluster; run_behavior; run_figures ;;
+  rois)       run_rois ;;
+  cluster)    run_cluster ;;
+  behavior)   run_behavior ;;
+  figures)    run_figures ;;
+  supplement) run_supplement ;;
+  all)        run_rois; run_cluster; run_behavior; run_figures; run_supplement ;;
   *)
     grep '^#' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     ;;

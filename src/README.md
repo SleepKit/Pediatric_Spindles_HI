@@ -25,9 +25,12 @@ src/
 ├── behavioral_models.py          # TOVA_z ~ ROI_z + age_c + gender + logHI_c
 │                                 # for each ROI x TOVA outcome.
 │                                 # -> behavioral_model_results.csv
-└── generate_manuscript_figures.py# Renders Figures 1-5 (methods, normative
-                                  # topography, corrected/uncorrected HI effects,
-                                  # cognition forest plot).
+├── generate_manuscript_figures.py# Renders Figures 1-5 (methods, normative
+│                                 # topography, corrected/uncorrected HI effects,
+│                                 # cognition forest plot).
+└── build_supplement.py           # Builds the Supplementary Information document
+                                  # (Tables S1-S3, Figure S1) via the docx-tools
+                                  # CLI. -> output/supplement.docx
 ```
 
 Nothing in `src/` hardcodes an absolute path: every input/output location is
@@ -62,12 +65,15 @@ resolve), or invoke the modules directly:
 ./scripts/run.sh cluster     # corrected p-values -> cluster_permutation_results.csv
 ./scripts/run.sh behavior    # ROI/TOVA models    -> behavioral_model_results.csv
 ./scripts/run.sh figures     # Figures 1-5
+./scripts/run.sh supplement  # SI document        -> output/supplement.docx
 ./scripts/run.sh all         # all of the above, in order
 ```
 
 `compute_rois_corrected.py` must run before `behavioral_models.py` and
 `generate_manuscript_figures.py`, both of which read
-`roi_values_corrected.csv`.
+`roi_values_corrected.csv`. `build_supplement.py` reads the cluster and
+behavioral result tables, so it runs after those stages (it needs the
+`docx-tools` CLI and `assets/inside172_montage.png`).
 
 ## Canonical analysis parameters (see `spindle_common.py` / `cluster_permutation.py`)
 
