@@ -26,7 +26,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.patches import FancyBboxPatch, Patch
+from matplotlib.patches import Patch
 from scipy import stats
 from scipy.signal import butter, filtfilt, hilbert
 import mne
@@ -847,69 +847,6 @@ def make_figure5():
 
     out = os.path.join(OUT_DIR, 'Figure5_cognition_coefficients.png')
     fig.savefig(out, dpi=DPI, bbox_inches='tight', pad_inches=0.15)
-    plt.close(fig)
-    print(f'[SAVED] {out}')
-
-
-# ============================================================
-# SUPP FIGURE — Slow Spindle Peak Frequency Topography
-# ============================================================
-def make_supp_peakfreq():
-    """Supplementary figure: slow spindle peak frequency regression maps.
-    1 row x 2 cols: beta coefficients + t-statistics with cluster overlay.
-    """
-    betas, tstats, pvals = channel_regression(slow_data, 'Frequency', covUse)
-
-    # Find ROI channels for peak freq (uncorrected clusters)
-    roi_freq, _, _ = find_roi_channels(slow_data, 'Frequency', covUse)
-
-    fig = plt.figure(figsize=(FULL_WIDTH_IN, FULL_WIDTH_IN * 0.35))
-    gs = gridspec.GridSpec(1, 2, wspace=0.40,
-                           left=0.06, right=0.94, top=0.82, bottom=0.08)
-
-    # ----- LEFT: beta coefficients -----
-    ax_b = fig.add_subplot(gs[0, 0])
-    vlim_b = np.nanmax(np.abs(betas[np.isfinite(betas)])) if np.any(np.isfinite(betas)) else 0.1
-    im_b, _ = mne.viz.plot_topomap(
-        betas, info, axes=ax_b, show=False,
-        cmap='PuOr_r', sphere=SPHERE, contours=0,
-        vlim=(-vlim_b, vlim_b), sensors=False
-    )
-    cb_b = plt.colorbar(im_b, ax=ax_b, shrink=0.75, pad=0.02, aspect=15)
-    cb_b.ax.tick_params(labelsize=5, width=0.4, length=2)
-    cb_b.outline.set_linewidth(0.4)
-    ax_b.set_title('Beta coefficient', fontsize=FONT_TITLE, fontweight='bold', pad=6)
-    ax_b.set_ylabel(f"Slow peak freq.\n{_ctag('slow', 'Frequency')}", fontsize=FONT_LABEL,
-                     fontweight='bold', labelpad=18, rotation=0, ha='right', va='center')
-    ax_b.text(-0.08, 1.08, 'a', transform=ax_b.transAxes,
-              fontsize=FONT_PANEL, fontweight='bold', va='top')
-
-    # ----- RIGHT: t-statistics -----
-    ax_t = fig.add_subplot(gs[0, 1])
-    vlim_t = np.nanmax(np.abs(tstats[np.isfinite(tstats)])) if np.any(np.isfinite(tstats)) else 2.5
-    mask_sig = pvals < 0.05
-    im_t, _ = mne.viz.plot_topomap(
-        tstats, info, axes=ax_t, show=False,
-        cmap='RdBu_r', sphere=SPHERE, contours=0,
-        vlim=(-vlim_t, vlim_t), sensors=False,
-        mask=mask_sig,
-        mask_params=dict(marker='o', markerfacecolor='black',
-                         markeredgecolor='black', markersize=2.5,
-                         markeredgewidth=0.3)
-    )
-    if roi_freq:
-        ax_t.scatter(points_x[roi_freq], points_y[roi_freq],
-                     s=8, facecolors='none', edgecolors='black',
-                     linewidths=0.5, zorder=9, alpha=0.7)
-    cb_t = plt.colorbar(im_t, ax=ax_t, shrink=0.75, pad=0.02, aspect=15)
-    cb_t.ax.tick_params(labelsize=5, width=0.4, length=2)
-    cb_t.outline.set_linewidth(0.4)
-    ax_t.set_title('t-statistic (p < .05 uncorr.)', fontsize=FONT_TITLE, fontweight='bold', pad=6)
-    ax_t.text(-0.08, 1.08, 'b', transform=ax_t.transAxes,
-              fontsize=FONT_PANEL, fontweight='bold', va='top')
-
-    out = os.path.join(OUT_DIR, 'Supp_Figure_peakfreq_topography.png')
-    fig.savefig(out, dpi=DPI)
     plt.close(fig)
     print(f'[SAVED] {out}')
 

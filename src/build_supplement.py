@@ -122,6 +122,10 @@ def table_s1(memberships: list[dict]) -> dict:
         "note": "Note. Anterior fast duration and anterior slow peak frequency are the "
         "cluster-corrected effects; posterior slow amplitude and anterior slow "
         "duration are exploratory regions from the uncorrected topographic maps. "
+        "The channels listed are the behavioral averaging ROIs: for anterior slow "
+        "peak frequency this ROI is exactly the 24-channel surviving cluster, whereas "
+        "for anterior fast duration it spans the full anterior extent of the effect "
+        "(47 channels) and is broader than the 29-channel surviving cluster (Table S2). "
         "Channel labels follow the 172-channel high-density montage (Figure S1).",
         "number": "S1",
         "font_size": 8,
