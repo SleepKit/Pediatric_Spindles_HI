@@ -45,6 +45,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 SPEC_PATH = PROJECT / "output/supplement_spec.json"
 OUTPUT = PROJECT / "output/supplement.docx"
 MONTAGE = PROJECT / "assets/inside172_montage.png"
+AGE_HI_SLOPES = PROJECT / "assets/age_hi_slow_amplitude_slopes.png"
 AUTHORS = PROJECT / "authors.json"
 REFS = PROJECT / "references.bib"
 
@@ -216,6 +217,54 @@ def figure_s1() -> dict:
     }
 
 
+def age_hi_section() -> list[dict]:
+    """Age x HI interaction text and the slow-amplitude simple-slopes figure (S2)."""
+    return [
+        {"type": "pagebreak"},
+        {
+            "type": "heading",
+            "text": "Age × Hypopnea Index Interaction",
+            "level": 1,
+        },
+        {
+            "type": "body",
+            "text": "To test whether the whole-sample hypopnea-index (HI) "
+            "associations masked developmentally distinct effects, each spindle "
+            "metric was refit channel-wise with an Age × log(HI + 1) "
+            "interaction term, adjusting for age, sex, and the HI main effect "
+            "(mean-centered predictors; N = 59). The interaction term was "
+            "evaluated with a Freedman–Lane residual permutation test "
+            "(5,000 permutations; channel-forming |t| > 2.0) and cluster "
+            "correction over the channel adjacency. Age did not meaningfully "
+            "moderate the HI associations with spindle density, count, or "
+            "duration. Slow spindle amplitude showed a cluster-corrected "
+            "Age × HI interaction over a 63-channel cluster (cluster "
+            "p = 0.0002, mean t = −2.72): the HI–amplitude association "
+            "was positive in younger children and flattened to negative in "
+            "older children (Figure S2). This age-dependent amplitude pattern "
+            "is the basis for the cautious framing of slow-spindle topography "
+            "in the main text; the primary anterior fast-duration effect was "
+            "not moderated by age and remained stable in the whole-sample "
+            "model.",
+        },
+        {
+            "type": "figure",
+            "image": "figureS2.png",
+            "caption": "Simple slopes of the Age × hypopnea-index interaction "
+            "for slow spindle amplitude, averaged over the 63-channel "
+            "cluster-corrected interaction region. Lines show model-predicted "
+            "slow spindle amplitude as a function of log(HI + 1) at ages 6, 8, "
+            "and 10 years; shaded bands are 95% confidence intervals. The "
+            "HI–amplitude slope is positive in younger children and "
+            "flat-to-negative in older children, indicating that respiratory "
+            "disruption interacts with developmental stage for this "
+            "slow-spindle feature.",
+            "number": "S2",
+            "id": "figS2",
+        },
+    ]
+
+
 def build_spec() -> dict:
     memberships = roi_channel_memberships()
     return {
@@ -234,6 +283,7 @@ def build_spec() -> dict:
             {"type": "pagebreak"},
             table_s2(),
             table_s3(),
+            *age_hi_section(),
         ]
     }
 
@@ -246,11 +296,14 @@ def main() -> None:
 
     if not MONTAGE.exists():
         raise FileNotFoundError(f"montage image not found: {MONTAGE}")
+    if not AGE_HI_SLOPES.exists():
+        raise FileNotFoundError(f"age x HI slopes image not found: {AGE_HI_SLOPES}")
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         shutil.copy(MONTAGE, tmp_path / "figureS1.png")
+        shutil.copy(AGE_HI_SLOPES, tmp_path / "figureS2.png")
         shutil.copy(AUTHORS, tmp_path / "authors.json")
         shutil.copy(REFS, tmp_path / "refs.bib")
         subprocess.run(
