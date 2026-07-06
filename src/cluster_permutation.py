@@ -22,8 +22,8 @@ regression, so they would be statistically wrong here. Instead we use:
   logHI_c t-map is recomputed. The MAX cluster mass per permutation is recorded.
 - p-value for an observed cluster = (#{null_max_mass >= obs_mass} + 1) / (N + 1).
 
-The vectorized Freedman-Lane math is ported from
-``docs/followup_analyses/rerun_with_subject80.py``.
+The Freedman-Lane residual-permutation approach is shared with the Age x HI
+interaction analysis in ``scripts/age_hi_interaction.py``.
 """
 
 from __future__ import annotations

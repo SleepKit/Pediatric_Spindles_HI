@@ -53,11 +53,28 @@ mne.set_log_level('ERROR')
 OUT_DIR = FIGURE_DIR
 ensure_dir(OUT_DIR)
 
+# Final manuscript figures are written under output/ as BOTH png and pdf at 600 dpi
+# (SLEEP submission format); see save_manuscript_fig().
+PAPER_DIR = PROJECT / "output"
+
+
+def save_manuscript_fig(fig, name, **kw):
+    """Save a manuscript figure as PNG and PDF at 600 dpi under output/."""
+    kw.setdefault("dpi", DPI)
+    for ext in ("png", "pdf"):
+        path = PAPER_DIR / f"{name}.{ext}"
+        fig.savefig(path, **kw)
+        print(f"[SAVED] {path}")
+
+# Cluster-permutation pipeline schematic (Figure 1c): clean, label-free panel
+# rasterized from output/figure1_panel-C.svg (poster artwork, internal labels removed).
+TOPO_PATH = PROJECT / "output/figure1_panelC.png"
+
 # ============================================================
 # STYLING CONSTANTS (Nature figure bible)
 # ============================================================
 FULL_WIDTH_IN = 7.2          # 183 mm
-DPI = 300
+DPI = 600                    # SLEEP submission resolution (png + pdf)
 FONT_FAMILY = 'Arial'
 FONT_LABEL = 6               # axis labels 5-7pt
 FONT_TITLE = 7
@@ -89,203 +106,54 @@ points_x = channels.x
 points_y = channels.y
 info = channels.info
 nCh = len(chan_labels)
+print(f'[INFO] {nCh} channels loaded (geometry only; this module runs no analysis)')
 
-print(f'[INFO] {nCh} channels loaded, coordinate range x=[{points_x.min():.4f}, {points_x.max():.4f}]')
+# ------------------------------------------------------------------
+# Analysis and figure creation are SEPARATE steps. Every quantity below is
+# precomputed by scripts/compute_figure_data.py and only loaded here; this
+# module performs no raw-data loading, channel-wise regression, or permutation
+# testing. Run `python scripts/compute_figure_data.py` first.
+# ------------------------------------------------------------------
+from compute_figure_data import load as load_figure_data  # noqa: E402
+_FIG = load_figure_data()
+_REG = _FIG['reg']          # (band, metric) -> {'beta','t','p'} channel maps
+_SCATTER = _FIG['scatter']  # (band, metric) -> partial-residual scatter series
+_TOPO = _FIG['topo']        # normative per-channel topographies (Figure 2)
+_ROI = _FIG['roi']          # ROI / permutation-cluster channel index lists
+_CTAG = _FIG['ctag']        # (band, metric) -> corrected cluster-p tag string
+_FIG5 = _FIG['fig5']        # Figure 5 forest-plot coefficients
 
-covUse = load_covariates(COV_PATH)
-subject_list = covUse['id'].tolist()
-nSub = len(subject_list)
-print(f'[INFO] {nSub} subjects in covariate table')
+ddroi_slow_amp = _ROI['ddroi_slow_amp']
+ddroi_slow_dur = _ROI['ddroi_slow_dur']
+ddroi_fast_dur = _ROI['ddroi_fast_dur']
+perm_fast_dur = _ROI['perm_fast_dur']
+perm_slow_freq = _ROI['perm_slow_freq']
 
-matrices = load_spindle_matrices(covUse, nCh, include_frequency=True)
-if matrices.missing_subjects:
-    print(f'  [WARN] Missing spindle files for subjects: {matrices.missing_subjects}')
-print(f'[INFO] Spindle extraction complete for {nSub} subjects')
-
-slow_data = matrices.slow
-fast_data = matrices.fast
-sleep_mins = matrices.sleep_mins
-
-CountMat_slow = slow_data['Count']
-AmpMat_slow = slow_data['Amplitude']
-DurMat_slow = slow_data['Duration']
-FreqMat_slow = slow_data['Frequency']
-CountMat_fast = fast_data['Count']
-AmpMat_fast = fast_data['Amplitude']
-DurMat_fast = fast_data['Duration']
-
-# ============================================================
-# 4. ROI CLUSTER EXTRACTION  (replicating notebook logic)
-# ============================================================
-predictors = PREDICTORS
-dist_matrix = channels.distance_matrix
-
-
-def find_roi_channels(data_dict, metric, cov_df):
-    """Return list of channel indices forming a significant bilateral ROI cluster."""
-    data_matrix = data_matrix_for_metric(data_dict, metric, sleep_mins)
-    _, t_stats, p_vals = run_channel_regression(data_matrix, cov_df, predictors)
-
-    sig_seeds = np.where(p_vals < 0.05)[0]
-    seeds_contiguous = []
-    for ch in sig_seeds:
-        neighbors = np.where((dist_matrix[ch] < 0.035) & (dist_matrix[ch] > 0))[0]
-        sig_neighbors = [n for n in neighbors if p_vals[n] < 0.05]
-        if len(sig_neighbors) >= 2:
-            seeds_contiguous.append(ch)
-
-    final_roi = set(seeds_contiguous)
-    for ch in seeds_contiguous:
-        neighbors = np.where((dist_matrix[ch] < 0.035) & (dist_matrix[ch] > 0))[0]
-        final_roi.update(n for n in neighbors if 0.05 <= p_vals[n] < 0.08)
-
-    roi_list = sorted(final_roi)
-    if roi_list:
-        left_count = np.sum(points_x[roi_list] < -0.015)
-        right_count = np.sum(points_x[roi_list] > 0.015)
-        if left_count < 2 or right_count < 2:
-            return [], t_stats, p_vals
-    return roi_list, t_stats, p_vals
-
-
-# Pre-compute all ROI clusters using MNE Delaunay adjacency.
-# NOTE: This adjacency only defines spatial neighbours for forming connected
-# components of suprathreshold channels. The family-wise-error-corrected cluster
-# p-values come from cluster_permutation.cluster_permutation_test (covariate-
-# adjusted Freedman-Lane residual permutation), NOT from any MNE permutation test
-# (MNE's 1-sample/F tests do not support covariate-adjusted regression).
-CLUSTER_T_THRESH = 2.0
-adj_mne_sparse, _ = mne.channels.find_ch_adjacency(info, ch_type='eeg')
-adj_mne_dense = adj_mne_sparse.toarray().astype(bool)
-print(f'[INFO] MNE Delaunay adjacency: mean neighbors={adj_mne_dense.sum(axis=1).mean():.1f}')
-
-
-def find_permutation_clusters(data_dict, metric, cov_df):
-    """Channel indices of the top cluster, for drawing the membership overlay.
-
-    Thin wrapper over cluster_permutation.largest_cluster_channels (the single
-    shared definition used by compute_rois_corrected.py too): the largest |t|>2.0
-    connected component over the MNE Delaunay adjacency, ranked by cluster mass.
-    Used purely for the topomap overlay; the corrected cluster p-value is computed
-    separately by cluster_permutation_test.
-    """
-    data_matrix = data_matrix_for_metric(data_dict, metric, sleep_mins)
-    return largest_cluster_channels(
-        data_matrix, cov_df, adj_mne_dense, predictors, CLUSTER_T_THRESH
-    )
-
-
-# Data-driven ROIs (p < 0.05 + trending neighbors) — used for behavioral models
-ddroi_slow_count, _, _ = find_roi_channels(slow_data, 'Count', covUse)
-ddroi_slow_amp, _, _   = find_roi_channels(slow_data, 'Amplitude', covUse)
-ddroi_slow_dur, _, _   = find_roi_channels(slow_data, 'Duration', covUse)
-ddroi_fast_dur, _, _   = find_roi_channels(fast_data, 'Duration', covUse)
-
-print(f'[INFO] Data-driven ROIs: slow_count={len(ddroi_slow_count)}, slow_amp={len(ddroi_slow_amp)}, '
-      f'slow_dur={len(ddroi_slow_dur)}, fast_dur={len(ddroi_fast_dur)}')
-
-# Permutation clusters (|t| > 2.0, Delaunay adjacency) — matches MNE correction
-perm_slow_count = find_permutation_clusters(slow_data, 'Density', covUse)
-perm_slow_amp   = find_permutation_clusters(slow_data, 'Amplitude', covUse)
-perm_slow_dur   = find_permutation_clusters(slow_data, 'Duration', covUse)
-perm_fast_dur   = find_permutation_clusters(fast_data, 'Duration', covUse)
-perm_slow_freq  = find_permutation_clusters(slow_data, 'Frequency', covUse)
-
-print(f'[INFO] Perm clusters (Delaunay): slow_count={len(perm_slow_count)}, slow_amp={len(perm_slow_amp)}, '
-      f'slow_dur={len(perm_slow_dur)}, fast_dur={len(perm_fast_dur)}, slow_freq={len(perm_slow_freq)}')
-
-
-# ============================================================
-# 5. REAL cluster-corrected p-values
-# ============================================================
-# Family-wise-error-corrected cluster p-values are computed by the covariate-
-# adjusted Freedman-Lane permutation test in cluster_permutation.py. To keep the
-# figure build fast we read the precomputed table when present, and only run the
-# (slow) permutation test on the fly when it is missing.
-from spindle_common import TABLE_DIR  # noqa: E402
-
-_CLUSTER_P_CSV = Path(TABLE_DIR) / 'cluster_permutation_results.csv'
-
-
-def _load_cluster_pvalues():
-    """Return {(band, metric): p_value} of corrected top-cluster p-values."""
-    if _CLUSTER_P_CSV.exists():
-        tbl = pd.read_csv(_CLUSTER_P_CSV)
-        return {(r['band'], r['metric']): r['p_value'] for _, r in tbl.iterrows()}
-
-    print('[INFO] cluster_permutation_results.csv missing; computing p-values '
-          'on the fly (slow)...')
-    from cluster_permutation import METRICS, cluster_permutation_test
-    band_data = {'slow': slow_data, 'fast': fast_data}
-    out = {}
-    for _label, band, metric in METRICS:
-        data_matrix = data_matrix_for_metric(band_data[band], metric, sleep_mins)
-        clusters = cluster_permutation_test(data_matrix, covUse, adj_mne_dense)
-        out[(band, metric)] = clusters[0]['p'] if clusters else float('nan')
-    return out
-
-
-_CLUSTER_P = _load_cluster_pvalues()
+# ROI / permutation-cluster channel lists and regression maps come from the
+# precomputed artifact loaded above; no analysis runs in this module.
 
 
 def _ctag(band, metric):
-    """Format a corrected cluster p-value tag '(cluster p = X*)'.
-
-    Appends '*' when the FWE-corrected cluster p-value is < 0.05.
-    """
-    p = _CLUSTER_P.get((band, metric))
-    if p is None or (isinstance(p, float) and np.isnan(p)):
-        return '(cluster p = n/a)'
-    star = '*' if p < 0.05 else ''
-    p_txt = f'{p:.3f}' if p >= 0.001 else f'{p:.4f}'
-    return f'(cluster p = {p_txt}{star})'
+    """Corrected cluster-p tag '(cluster p = X*)' from the precomputed artifact."""
+    return _CTAG.get((band, metric), '(cluster p = n/a)')
 
 
 # ============================================================
-# HELPER: channel-wise regression returning beta, t, p arrays
+# HELPER: partial-residual scatter drawn from a precomputed series
 # ============================================================
-def channel_regression(data_dict, metric, cov_df):
-    """Run channel-wise OLS: metric ~ logHI_c + age_c + gender_bin.
-    Returns beta, tstat, pval arrays (nCh,) for the logHI_c predictor.
-    """
-    data_matrix = data_matrix_for_metric(data_dict, metric, sleep_mins)
-    return run_channel_regression(data_matrix, cov_df, predictors)
-
-
-# ============================================================
-# HELPER: scatter plot of ROI metric vs HI
-# ============================================================
-def _scatter_roi_vs_hi(ax, data_matrix, roi_channels, cov_df, ylabel, color='#1a5276'):
-    """Partial-residual scatter: ROI metric vs logHI, adjusted for age and sex.
-
-    Both ROI average and logHI are residualized on age_c + gender_bin so the
-    scatter reflects the same partial association shown by the regression models.
-    """
-    if not roi_channels:
+def _plot_scatter(ax, series, ylabel, color='#1a5276'):
+    """Draw a precomputed partial-residual scatter (ROI metric vs logHI | age, sex)."""
+    if series is None:
         ax.text(0.5, 0.5, 'No ROI', transform=ax.transAxes,
                 ha='center', va='center', fontsize=FONT_LABEL, color='grey')
         return
-    roi_avg = np.nanmean(data_matrix[:, roi_channels], axis=1)
-    hi_vals = cov_df['logHI'].values
-    age_vals = cov_df['age_c'].values
-    sex_vals = cov_df['gender_bin'].values
-
-    mask = ~(np.isnan(roi_avg) | np.isnan(hi_vals) | np.isnan(age_vals) | np.isnan(sex_vals))
-    roi_m = roi_avg[mask]
-    hi_m = hi_vals[mask]
-    cov_mat = sm.add_constant(np.column_stack([age_vals[mask], sex_vals[mask]]))
-
-    # Residualize both variables on age + sex
-    y_resid = roi_m - sm.OLS(roi_m, cov_mat).fit().predict(cov_mat)
-    x_resid = hi_m  - sm.OLS(hi_m,  cov_mat).fit().predict(cov_mat)
-
+    x_resid, y_resid = series['x'], series['y']
     ax.scatter(x_resid, y_resid, s=12, alpha=0.55, color=color,
                edgecolors='white', linewidths=0.3, zorder=5)
-    slope, intercept, r_val, p_val, _ = stats.linregress(x_resid, y_resid)
     x_fit = np.linspace(x_resid.min(), x_resid.max(), 100)
-    ax.plot(x_fit, slope * x_fit + intercept, color=color, linewidth=1.0, zorder=6)
-
-    ax.text(0.95, 0.95, f'r = {r_val:.2f}',
+    ax.plot(x_fit, series['slope'] * x_fit + series['intercept'],
+            color=color, linewidth=1.0, zorder=6)
+    ax.text(0.95, 0.95, f"r = {series['r']:.2f}",
             transform=ax.transAxes, ha='right', va='top',
             fontsize=5, color='#555555')
     ax.set_xlabel('logHI | age, sex', fontsize=FONT_LABEL)
@@ -434,7 +302,7 @@ def _make_panel_spindle_detection(ax_raw, ax_filt):
               '  Correlation \u2265 0.65\n'
               '  RMS \u2265 1.5\u00d7 median')
     ax_raw.text(0.99, 0.95, params, transform=ax_raw.transAxes,
-                fontsize=4, va='top', ha='right', family='monospace',
+                fontsize=4, va='top', ha='right', ma='left', family='monospace',
                 bbox=dict(boxstyle='round,pad=0.4', fc='#f7f7f7',
                           ec='#cccccc', alpha=0.95),
                 linespacing=1.3)
@@ -465,12 +333,25 @@ def _make_panel_spindle_detection(ax_raw, ax_filt):
 # FIGURE 1 — Methods Illustration (Sleep Architecture + Spindle Detection)
 # ============================================================
 def make_figure1():
-    """Standalone methods figure: hypnogram (a) + spindle detection illustration (b)."""
-    fig = plt.figure(figsize=(FULL_WIDTH_IN, FULL_WIDTH_IN * 0.7))
+    """Standalone methods figure: hypnogram (a) + spindle detection (b) +
+    cluster-permutation pipeline schematic (c)."""
+    LEFT, RIGHT = 0.10, 0.96
+    PANEL_W = RIGHT - LEFT
+    FIG_H = FULL_WIDTH_IN * 1.15
+
+    # Panel c spans the full panel width (same as a/b); its height follows the
+    # schematic's native aspect ratio so the image fills the width undistorted.
+    topo_img = plt.imread(TOPO_PATH)
+    img_aspect = topo_img.shape[1] / topo_img.shape[0]
+    c_bottom = 0.05
+    c_height = (PANEL_W * FULL_WIDTH_IN / img_aspect) / FIG_H
+
+    fig = plt.figure(figsize=(FULL_WIDTH_IN, FIG_H))
     gs = gridspec.GridSpec(2, 1,
                            height_ratios=[0.8, 1.2],
                            hspace=0.45,
-                           left=0.10, right=0.96, top=0.95, bottom=0.08)
+                           left=LEFT, right=RIGHT,
+                           top=0.96, bottom=c_bottom + c_height + 0.07)
 
     # ---- panel a: hypnogram ----
     ax_hyp = fig.add_subplot(gs[0])
@@ -487,10 +368,15 @@ def make_figure1():
     ax_raw.text(-0.05, 1.22, 'b', transform=ax_raw.transAxes,
                 fontsize=FONT_PANEL, fontweight='bold', va='top')
 
-    out = os.path.join(OUT_DIR, 'Figure1_methods_illustration.png')
-    fig.savefig(out, dpi=DPI)
+    # ---- panel c: cluster-permutation pipeline schematic ----
+    ax_topo = fig.add_axes([LEFT, c_bottom, PANEL_W, c_height])
+    ax_topo.imshow(topo_img, aspect='auto', interpolation='none')
+    ax_topo.axis('off')
+    ax_topo.text(-0.05, 1.08, 'c', transform=ax_topo.transAxes,
+                 fontsize=FONT_PANEL, fontweight='bold', va='top')
+
+    save_manuscript_fig(fig, 'Fig_1')
     plt.close(fig)
-    print(f'[SAVED] {out}')
 
 
 # ============================================================
@@ -502,10 +388,10 @@ def make_figure2():
     gs = gridspec.GridSpec(2, 2, wspace=0.35, hspace=0.30,
                            left=0.04, right=0.96, top=0.88, bottom=0.06)
 
-    den_slow = np.nanmean(CountMat_slow / sleep_mins, axis=0)
-    den_fast = np.nanmean(CountMat_fast / sleep_mins, axis=0)
-    dur_slow = np.nanmean(DurMat_slow, axis=0)
-    dur_fast = np.nanmean(DurMat_fast, axis=0)
+    den_slow = _TOPO['den_slow']
+    den_fast = _TOPO['den_fast']
+    dur_slow = _TOPO['dur_slow']
+    dur_fast = _TOPO['dur_fast']
 
     den_vlim = (min(np.nanmin(den_slow), np.nanmin(den_fast)),
                 max(np.nanmax(den_slow), np.nanmax(den_fast)))
@@ -538,19 +424,16 @@ def make_figure2():
         ax.text(-0.15, 1.08, panel_lbl, transform=ax.transAxes,
                 fontsize=FONT_PANEL, fontweight='bold', va='top')
 
-    out = os.path.join(OUT_DIR, 'Figure2_normative_topography.png')
-    fig.savefig(out, dpi=DPI)
+    save_manuscript_fig(fig, 'Fig_2')
     plt.close(fig)
-    print(f'[SAVED] {out}')
 
 
 # ============================================================
 # HELPER: topo-row with beta, t-stat, and scatter columns
 # ============================================================
-def _topo_scatter_row(fig, gs, r, row_label, corr_tag, ddict, metric,
-                      overlay_channels, overlay_corrected, scatter_mat,
-                      scatter_ylabel, panel_labels, pi,
-                      scatter_roi=None, dd_roi=None):
+def _topo_scatter_row(fig, gs, r, row_label, corr_tag, band, metric,
+                      overlay_channels, overlay_corrected,
+                      scatter_ylabel, panel_labels, pi, dd_roi=None):
     """Draw one row of the 3-column regression figure (beta | t-stat | scatter).
 
     Parameters
@@ -564,10 +447,9 @@ def _topo_scatter_row(fig, gs, r, row_label, corr_tag, ddict, metric,
         Channels used for the scatter-plot ROI average.  Falls back to
         overlay_channels when not supplied.
     """
-    betas, tstats, pvals = channel_regression(ddict, metric, covUse)
+    reg = _REG[(band, metric)]
+    betas, tstats, pvals = reg['beta'], reg['t'], reg['p']
     display_label = f'{row_label}\n{corr_tag}'
-    if scatter_roi is None:
-        scatter_roi = overlay_channels
 
     # ----- COL 0: beta coefficients -----
     ax_b = fig.add_subplot(gs[r, 0])
@@ -627,7 +509,7 @@ def _topo_scatter_row(fig, gs, r, row_label, corr_tag, ddict, metric,
 
     # ----- COL 2: partial-residual scatter -----
     ax_s = fig.add_subplot(gs[r, 2])
-    _scatter_roi_vs_hi(ax_s, scatter_mat, scatter_roi, covUse, scatter_ylabel)
+    _plot_scatter(ax_s, _SCATTER[(band, metric)], scatter_ylabel)
     if r == 0:
         ax_s.set_title('Partial residuals', fontsize=FONT_TITLE, fontweight='bold', pad=6)
     ax_s.text(-0.30, 1.08, panel_labels[pi], transform=ax_s.transAxes,
@@ -646,10 +528,10 @@ def make_figure3():
     # rows_config: (label, corr_tag, data_dict, metric, perm_cluster, corrected,
     #               scatter_mat, ylabel, dd_roi_for_overlay, scatter_roi)
     rows_config = [
-        ('Fast duration',   _ctag('fast', 'Duration'), fast_data, 'Duration',
-         perm_fast_dur, True, DurMat_fast, 'Duration (s)', ddroi_fast_dur, ddroi_fast_dur),
-        ('Slow peak freq.', _ctag('slow', 'Frequency'), slow_data, 'Frequency',
-         perm_slow_freq, True, FreqMat_slow, 'Peak freq. (Hz)', [], perm_slow_freq),
+        ('Fast duration',   _ctag('fast', 'Duration'), 'fast', 'Duration',
+         perm_fast_dur, True, 'Duration (s)', ddroi_fast_dur),
+        ('Slow peak freq.', _ctag('slow', 'Frequency'), 'slow', 'Frequency',
+         perm_slow_freq, True, 'Peak freq. (Hz)', []),
     ]
 
     fig = plt.figure(figsize=(FULL_WIDTH_IN, FULL_WIDTH_IN * 0.55))
@@ -658,15 +540,13 @@ def make_figure3():
                            width_ratios=[1, 1, 0.9])
     panel_labels = ['a', 'b', 'c', 'd', 'e', 'f']
     pi = 0
-    for r, (label, ctag, ddict, metric, overlay, corrected, smat, ylabel, dd_roi, s_roi) in enumerate(rows_config):
-        pi = _topo_scatter_row(fig, gs, r, label, ctag, ddict, metric,
-                               overlay, corrected, smat, ylabel, panel_labels, pi,
-                               scatter_roi=s_roi, dd_roi=dd_roi)
+    for r, (label, ctag, band, metric, overlay, corrected, ylabel, dd_roi) in enumerate(rows_config):
+        pi = _topo_scatter_row(fig, gs, r, label, ctag, band, metric,
+                               overlay, corrected, ylabel, panel_labels, pi,
+                               dd_roi=dd_roi)
 
-    out = os.path.join(OUT_DIR, 'Figure3_HI_corrected_effects.png')
-    fig.savefig(out, dpi=DPI)
+    save_manuscript_fig(fig, 'Fig_3')
     plt.close(fig)
-    print(f'[SAVED] {out}')
 
 
 # ============================================================
@@ -677,8 +557,8 @@ def make_figure4():
     Shows uncorrected effects used as data-driven ROIs for behavioral analyses.
     """
     rows_config = [
-        ('Slow amplitude', _ctag('slow', 'Amplitude'), slow_data, 'Amplitude', ddroi_slow_amp, False, AmpMat_slow, 'Amplitude (\u00b5V)'),
-        ('Slow duration',  _ctag('slow', 'Duration'),  slow_data, 'Duration',  ddroi_slow_dur, False, DurMat_slow, 'Duration (s)'),
+        ('Slow amplitude', _ctag('slow', 'Amplitude'), 'slow', 'Amplitude', ddroi_slow_amp, False, 'Amplitude (\u00b5V)'),
+        ('Slow duration',  _ctag('slow', 'Duration'),  'slow', 'Duration',  ddroi_slow_dur, False, 'Duration (s)'),
     ]
 
     fig = plt.figure(figsize=(FULL_WIDTH_IN, FULL_WIDTH_IN * 0.55))
@@ -687,14 +567,12 @@ def make_figure4():
                            width_ratios=[1, 1, 0.9])
     panel_labels = ['a', 'b', 'c', 'd', 'e', 'f']
     pi = 0
-    for r, (label, ctag, ddict, metric, overlay, corrected, smat, ylabel) in enumerate(rows_config):
-        pi = _topo_scatter_row(fig, gs, r, label, ctag, ddict, metric,
-                               overlay, corrected, smat, ylabel, panel_labels, pi)
+    for r, (label, ctag, band, metric, overlay, corrected, ylabel) in enumerate(rows_config):
+        pi = _topo_scatter_row(fig, gs, r, label, ctag, band, metric,
+                               overlay, corrected, ylabel, panel_labels, pi)
 
-    out = os.path.join(OUT_DIR, 'Figure4_HI_uncorrected_effects.png')
-    fig.savefig(out, dpi=DPI)
+    save_manuscript_fig(fig, 'Fig_4')
     plt.close(fig)
-    print(f'[SAVED] {out}')
 
 
 # ============================================================
@@ -707,45 +585,10 @@ def make_figure5():
     Standardized beta with 95% CI bars.
     Model: TOVA_z ~ ROI_z + age_years + gender + overall_hi
     """
-    # --- Data preparation (replicating R pipeline) ---
-    cov = pd.read_csv(COV_PATH)
-    roi = pd.read_csv(ROI_PATH)
-    # ant_slow_peakfreq now ships in roi_values_corrected.csv (cluster-corrected
-    # ROI, written by compute_rois_corrected.py) rather than being recomputed
-    # inline here, so the figure and behavioral_models.py share one ROI source.
-    df = cov.merge(roi, on='id', how='left')
+    # Forest-plot coefficients are precomputed by compute_figure_data.py; this
+    # figure runs no regressions.
+    results = _FIG5['results']  # (roi_idx, out_idx) -> (beta, ci_lo, ci_hi, p)
 
-    # Filter to subjects with valid TOVA
-    df = df.dropna(subset=['DPRIMEQ1'])
-
-    # Transformations
-    df['RT_log'] = np.log(df['RTMEANQ1'])
-    df['OM_sqrt'] = np.sqrt(df['OMPERQ1'])
-    df['COM_sqrt'] = np.sqrt(df['COMPERQ1'])
-
-    # Remove outliers Z>3 on transformed RT and OM
-    for col in ['RT_log', 'OM_sqrt']:
-        z = np.abs(stats.zscore(df[col].dropna()))
-        valid_idx = df[col].dropna().index[z < 3]
-        df = df.loc[df.index.isin(valid_idx)]
-
-    # Z-score DVs and ROI predictors
-    dv_cols = ['DPRIMEQ1', 'OM_sqrt', 'COM_sqrt']
-    roi_cols = ['ant_fast_dur', 'ant_slow_peakfreq', 'ant_slow_dur', 'pos_slow_amp']
-
-    for col in dv_cols:
-        df[col + '_z'] = stats.zscore(df[col].dropna())
-        # Re-align with df
-        z_series = (df[col] - df[col].mean()) / df[col].std()
-        df[col + '_z'] = z_series
-
-    for col in roi_cols:
-        z_series = (df[col] - df[col].mean()) / df[col].std()
-        df[col + '_z'] = z_series
-
-    print(f'[INFO] Figure 4: N = {len(df)} after TOVA filter + outlier removal')
-
-    # --- Run regressions ---
     outcomes = [
         ("d' (TOVA)", 'DPRIMEQ1_z'),
         ('Omission errors', 'OM_sqrt_z'),
@@ -759,22 +602,8 @@ def make_figure5():
     ]
 
     # Colors: primary (dark blue), secondary corrected (teal), uncorrected (muted grey)
-    colors_primary   = '#1a5276'   # strong dark blue for cluster-corrected primary
-    colors_secondary = ['#2e86c1', '#85929e', '#aab7b8']  # teal for 2nd corrected, muted grey for uncorrected
-
-    # Collect results: rows = ROI predictors, cols = outcomes
-    results = {}  # (roi_idx, out_idx) -> (beta, ci_lo, ci_hi, p)
-    for ri, (roi_label, roi_var) in enumerate(roi_predictors):
-        for oi, (out_label, out_var) in enumerate(outcomes):
-            sub = df.dropna(subset=[out_var, roi_var, 'age_years', 'gender', 'overall_hi'])
-            y = sub[out_var].values
-            X = sm.add_constant(sub[[roi_var, 'age_years', 'gender', 'overall_hi']].values)
-            model = sm.OLS(y, X).fit()
-            beta = model.params[1]
-            ci = model.conf_int(alpha=0.05)
-            ci_lo, ci_hi = ci[1, 0], ci[1, 1]
-            pval = model.pvalues[1]
-            results[(ri, oi)] = (beta, ci_lo, ci_hi, pval)
+    colors_primary   = '#1a5276'
+    colors_secondary = ['#2e86c1', '#85929e', '#aab7b8']
 
     # --- Plot ---
     n_roi = len(roi_predictors)
@@ -845,10 +674,75 @@ def make_figure5():
 
     # No suptitle — title goes in the figure caption in the manuscript
 
-    out = os.path.join(OUT_DIR, 'Figure5_cognition_coefficients.png')
-    fig.savefig(out, dpi=DPI, bbox_inches='tight', pad_inches=0.15)
+    save_manuscript_fig(fig, 'Fig_5', bbox_inches='tight', pad_inches=0.15)
     plt.close(fig)
-    print(f'[SAVED] {out}')
+
+
+# ============================================================
+# SUPPLEMENTARY FIGURE S5 — Spindle Density HI Trends (topomaps only)
+# ============================================================
+def _density_row(fig, gs, r, band, row_label, panel_labels):
+    """Draw one density row (beta | t-stat topomaps) for band's HI association."""
+    reg = _REG[(band, 'Density')]
+    betas, tstats, pvals = reg['beta'], reg['t'], reg['p']
+
+    # ----- COL 0: beta coefficients -----
+    ax_b = fig.add_subplot(gs[r, 0])
+    vlim_b = np.nanmax(np.abs(betas[np.isfinite(betas)])) if np.any(np.isfinite(betas)) else 1.0
+    im_b, _ = mne.viz.plot_topomap(
+        betas, info, axes=ax_b, show=False,
+        cmap='PuOr_r', sphere=SPHERE, contours=0,
+        vlim=(-vlim_b, vlim_b), sensors=False
+    )
+    cb_b = plt.colorbar(im_b, ax=ax_b, shrink=0.72, pad=0.02, aspect=15)
+    cb_b.ax.tick_params(labelsize=5, width=0.4, length=2)
+    cb_b.outline.set_linewidth(0.4)
+    if r == 0:
+        ax_b.set_title('Beta coefficient', fontsize=FONT_TITLE, fontweight='bold', pad=6)
+    ax_b.set_ylabel(f"{row_label}\n{_ctag(band, 'Density')}",
+                    fontsize=FONT_LABEL, fontweight='bold',
+                    labelpad=20, rotation=0, ha='right', va='center')
+    ax_b.text(-0.08, 1.12, panel_labels[0], transform=ax_b.transAxes,
+              fontsize=FONT_PANEL, fontweight='bold', va='top')
+
+    # ----- COL 1: t-statistics + p < .05 significance mask -----
+    ax_t = fig.add_subplot(gs[r, 1])
+    vlim_t = np.nanmax(np.abs(tstats[np.isfinite(tstats)])) if np.any(np.isfinite(tstats)) else 2.5
+    mask_sig = pvals < 0.05
+    im_t, _ = mne.viz.plot_topomap(
+        tstats, info, axes=ax_t, show=False,
+        cmap='RdBu_r', sphere=SPHERE, contours=0,
+        vlim=(-vlim_t, vlim_t), sensors=False,
+        mask=mask_sig,
+        mask_params=dict(marker='o', markerfacecolor='black',
+                         markeredgecolor='black', markersize=2.5,
+                         markeredgewidth=0.3)
+    )
+    cb_t = plt.colorbar(im_t, ax=ax_t, shrink=0.72, pad=0.02, aspect=15)
+    cb_t.ax.tick_params(labelsize=5, width=0.4, length=2)
+    cb_t.outline.set_linewidth(0.4)
+    if r == 0:
+        ax_t.set_title('t-statistic (p < .05 uncorr.)', fontsize=FONT_TITLE, fontweight='bold', pad=6)
+    ax_t.text(-0.08, 1.12, panel_labels[1], transform=ax_t.transAxes,
+              fontsize=FONT_PANEL, fontweight='bold', va='top')
+
+
+def make_figure_s5():
+    """Beta and t-statistic topomaps for the slow- and fast-density HI associations.
+
+    Documents the density trends noted in the main text: neither band reaches a
+    suprathreshold cluster, so unlike Figures 3-4 there is no data-driven ROI and
+    no partial-residual scatter — only the channel-wise topographic maps are
+    shown, each with the p < .05 significance mask, making the nulls explicit.
+    Rows mirror Figure 2: slow density (top), fast density (bottom).
+    """
+    fig = plt.figure(figsize=(FULL_WIDTH_IN * 0.62, FULL_WIDTH_IN * 0.66))
+    gs = gridspec.GridSpec(2, 2, wspace=0.45, hspace=0.30,
+                           left=0.15, right=0.95, top=0.90, bottom=0.05)
+    _density_row(fig, gs, 0, 'slow', 'Slow density', ['a', 'b'])
+    _density_row(fig, gs, 1, 'fast', 'Fast density', ['c', 'd'])
+    save_manuscript_fig(fig, 'Fig_S5')
+    plt.close(fig)
 
 
 # ============================================================
@@ -865,4 +759,6 @@ if __name__ == '__main__':
     make_figure4()
     print('\n=== Generating Figure 5 (cognition) ===')
     make_figure5()
+    print('\n=== Generating Figure S5 (slow density HI trend) ===')
+    make_figure_s5()
     print('\n=== ALL FIGURES COMPLETE ===')

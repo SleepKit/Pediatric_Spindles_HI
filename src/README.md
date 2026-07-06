@@ -25,12 +25,29 @@ src/
 ├── behavioral_models.py          # TOVA_z ~ ROI_z + age_c + gender + logHI_c
 │                                 # for each ROI x TOVA outcome.
 │                                 # -> behavioral_model_results.csv
-├── generate_manuscript_figures.py# Renders Figures 1-5 (methods, normative
-│                                 # topography, corrected/uncorrected HI effects,
-│                                 # cognition forest plot).
-└── build_supplement.py           # Builds the Supplementary Information document
-                                  # (Tables S1-S3, Figure S1) via the docx-tools
-                                  # CLI. -> output/supplement.docx
+├── compute_figure_data.py        # Precomputes every quantity Figures 2-5 and
+│                                 # Figure S5 need (normative topographies,
+│                                 # channel-wise HI maps incl. slow/fast density,
+│                                 # ROI/cluster membership, scatter series).
+│                                 # -> output/figure_data/main_figure_data.pkl
+├── generate_manuscript_figures.py# Renders Figures 1-5 and Figure S5 (methods,
+│                                 # normative topography, corrected/uncorrected
+│                                 # HI effects, cognition forest plot, density).
+├── generate_montage_figure.py    # Renders Figure S1 (172-channel montage).
+├── age_hi_interaction.py         # Channel-wise Age x HI interaction -> Figure S2.
+├── age_hi_roi_interaction.py     # ROI-level Age x HI interaction -> Figure S3,
+│                                 # Table S4.
+├── roi_29ch_sensitivity.py       # 47- vs 29-channel fast-duration ROI behavioral
+│                                 # sensitivity -> Table S5.
+├── loo_sensitivity.py            # Leave-one-subject-out cluster robustness.
+├── bootstrap_cluster_effect.py   # Subject-level bootstrap of the fast-duration
+│                                 # cluster effect.
+├── hi_robustness_figure.py       # HI distribution + robustness -> Figure S4.
+├── build_supplement.py           # Builds the Supplementary Information document
+│                                 # (Tables S1-S5, Figures S1-S5) via docx-tools.
+│                                 # -> output/supplement.docx
+└── build_main.py                 # Builds the main manuscript .docx from
+                                  # output/spec.json (needs the manuscript spec).
 ```
 
 Nothing in `src/` hardcodes an absolute path: every input/output location is
@@ -61,19 +78,25 @@ Run stages via `scripts/run.sh` (sets `src/` as cwd so the flat cross-imports
 resolve), or invoke the modules directly:
 
 ```bash
-./scripts/run.sh rois        # ROI values        -> roi_values_corrected.csv
-./scripts/run.sh cluster     # corrected p-values -> cluster_permutation_results.csv
-./scripts/run.sh behavior    # ROI/TOVA models    -> behavioral_model_results.csv
-./scripts/run.sh figures     # Figures 1-5
-./scripts/run.sh supplement  # SI document        -> output/supplement.docx
-./scripts/run.sh all         # all of the above, in order
+./scripts/run.sh rois         # ROI values         -> roi_values_corrected.csv
+./scripts/run.sh cluster      # corrected p-values  -> cluster_permutation_results.csv
+./scripts/run.sh behavior     # ROI/TOVA models     -> behavioral_model_results.csv
+./scripts/run.sh sensitivity  # 47- vs 29-ch ROI    -> Table S5
+./scripts/run.sh robustness   # LOO + bootstrap + Figure S4
+./scripts/run.sh agehi        # Age x HI            -> Figures S2/S3, Table S4
+./scripts/run.sh montage      # Figure S1
+./scripts/run.sh figures      # figuredata -> Figures 1-5, S5
+./scripts/run.sh supplement   # SI document         -> output/supplement.docx
+./scripts/run.sh all          # all of the above, in order
 ```
 
 `compute_rois_corrected.py` must run before `behavioral_models.py` and
 `generate_manuscript_figures.py`, both of which read
-`roi_values_corrected.csv`. `build_supplement.py` reads the cluster and
-behavioral result tables, so it runs after those stages (it needs the
-`docx-tools` CLI and `assets/inside172_montage.png`).
+`roi_values_corrected.csv`; `compute_figure_data.py` (the `figuredata`
+step, run automatically by `figures`) precomputes the cached quantities the
+figures draw from. `build_supplement.py` reads the cluster, behavioral, and
+interaction result tables plus the generated Figures S1-S5, so it runs after
+those stages (it needs the `docx-tools` CLI).
 
 ## Canonical analysis parameters (see `spindle_common.py` / `cluster_permutation.py`)
 

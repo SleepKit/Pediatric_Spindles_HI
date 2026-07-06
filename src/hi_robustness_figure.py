@@ -12,7 +12,7 @@ from scipy import stats
 
 from spindle_common import PROJECT, TABLE_DIR, load_covariates
 
-FIG_S4 = PROJECT / "paper/figureS4.png"
+FIG_S4 = PROJECT / "output/Fig_S4"  # stem; saved as .png and .pdf at 600 dpi
 LOO_CSV = TABLE_DIR / "loo_fast_duration_sensitivity.csv"
 BOOT_DRAWS = TABLE_DIR / "bootstrap_fast_duration_draws.npy"
 BOOT_CSV = TABLE_DIR / "bootstrap_fast_duration_effect.csv"
@@ -61,8 +61,9 @@ def main() -> None:
     fig.suptitle(f"Hypopnea index distribution and robustness of the fast-duration "
                  f"cluster (N = {n})", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(FIG_S4, dpi=200)
-    print(f"wrote {FIG_S4}")
+    for ext in ("png", "pdf"):
+        fig.savefig(f"{FIG_S4}.{ext}", dpi=600)
+    print(f"wrote {FIG_S4}.png / .pdf")
 
 
 if __name__ == "__main__":

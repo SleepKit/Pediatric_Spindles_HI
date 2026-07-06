@@ -14,9 +14,33 @@
       ]
     },
     {
+      "full_name": "Beth Peterson",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
       "full_name": "Camilla Matthews",
       "affiliations": [
         {"department": "Department of Pediatrics", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Tony Kille",
+      "affiliations": [
+        {"department": "Department of Otolaryngology-Head and Neck Surgery", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Annika Myers",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
+      ]
+    },
+    {
+      "full_name": "Brady Riedner",
+      "affiliations": [
+        {"department": "Department of Psychiatry", "institution": "University of Wisconsin", "city": "Madison", "state": "WI", "country": "USA"}
       ]
     },
     {
